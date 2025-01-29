@@ -5,18 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.0.13] - 2025-01-28
 
 ### Added
 
 - Command to remove Debug to Console and MsgBox lines added by the extension
 - Commands to add and remove debug Trace lines
+- Refined syntax check, with ability to set options through `#AutoIt3Wrapper_AU3Check_Parameters`
+- Completions and Hovers for AutoIt3Wrapper Directives
 
 ### Changed
+
+- Changes to autoit.includePaths setting now gets written to Windows Registry
 
 ### Fixed
 
 - Go To Definition regression
+- Output colors not showing due to other extensions (e.g., Github Copilot)
+- Icons missing for some Const and Enum variables in the outline/Symbol search
+- Detection of nested Regions
+- outputCodePage setting not working
+- Au3Check/Problems tab now works with includePaths setting
 
 ## [1.0.12] - 2023-09-26
 
@@ -322,7 +331,8 @@ The IntelliSense release!
 - Added the ability to generate a debug MsgBox for a highlighted variable or macro with Ctrl+Shift+D.
 - Added icon, banner color and description for marketplace.
 
-[1.0.12]: https://github.com/loganch/AutoIt-VSCode/compare/v1.0.10...v1.0.12
+[1.0.13]: https://github.com/loganch/AutoIt-VSCode/compare/v1.0.12...v1.0.13
+[1.0.12]: https://github.com/loganch/AutoIt-VSCode/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/loganch/AutoIt-VSCode/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/loganch/AutoIt-VSCode/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/loganch/AutoIt-VSCode/compare/v1.0.8...v1.0.9

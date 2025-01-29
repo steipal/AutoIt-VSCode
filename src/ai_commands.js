@@ -433,13 +433,9 @@ const AiOut = ({ id, aiOutProcess }) => {
   const prefixId = `#${id}:${spacer}`;
   const prefixEmpty = ''.padStart(prefixId.length, spacer);
   const hotkeyFailedMsg = [
-    [
-      /!!?>Failed Setting Hotkey\(s\)(?::|...)[\r\n]*/gi,
-      /(?:false)?--> SetHotKey (?:\(\) )?Restart failed(?:,|. -->) SetHotKey (?:\(\) )?Stop failed\.[\r\n]*/gi,
-    ],
-    [
-      /(!!?>Failed Setting Hotkey\(s\)(?::|...)[\r\n]*)?(?:false)?--> SetHotKey (?:\(\) )?Restart failed(?:,|. -->) SetHotKey (?:\(\) )?Stop failed\.[\r\n]*/gi,
-    ],
+    /!!?>Failed Setting Hotkey\(s\)(?::|...)[\r\n]*?/gi,
+    /(?:false)?--> SetHotKey (?:\(\) )?Restart failed(?:,|. -->) SetHotKey (?:\(\) )?Stop failed\.[\r\n]*/gi,
+    /(!!?>Failed Setting Hotkey\(s\)(?::|...)[\r\n]*?)?(?:false)?--> SetHotKey (?:\(\) )?Restart failed(?:,|. -->) SetHotKey (?:\(\) )?Stop failed\.[\r\n]*/gi,
   ];
 
   const outputText = (aiOut, prop, lines) => {
@@ -525,35 +521,30 @@ const AiOut = ({ id, aiOutProcess }) => {
       clearTimeout(prevLineTimer);
       const lines = prop === 'append' ? text.split(/\r?\n/) : [text];
       lines[0] = prevLine + lines[0];
-      for (let i = 0; i < lines.length; i += 1) {
+      for (let i = 0; i < lines.length; i++) {
         if (hotkeyFailedMsgFound) continue;
-        for (let r = 0; r < hotkeyFailedMsg.length; r += 1) {
-          const line = lines[i].replace(hotkeyFailedMsg[r][0], '');
+        for (let r = 0; r < hotkeyFailedMsg.length; r++) {
+          const line = lines[i].replace(hotkeyFailedMsg[r], '');
           if (line === lines[i]) continue;
+          if (hotkeyFailedMsgFound) lines.splice(i, 1);
+          else {
+            aWrapperHotkey.reset(id);
+            lines[i] = `+>Setting Hotkeys...--> Press `;
+            if (keybindings[`${commandsPrefix}restartScript`])
+              lines[i] += `${keybindings[`${commandsPrefix}restartScript`]} to Restart`;
 
-          hotkeyFailedMsg[r].shift();
-          if (hotkeyFailedMsg[r].length) {
-            lines.splice((i -= 1), 1);
-            break;
+            if (
+              keybindings[`${commandsPrefix}killScript`] ||
+              keybindings[`${commandsPrefix}killScriptOpened`]
+            ) {
+              if (keybindings[`${commandsPrefix}restartScript`]) lines[i] += ` or `;
+
+              lines[i] += `${keybindings[`${commandsPrefix}killScript`] ||
+                keybindings[`${commandsPrefix}killScriptOpened`]} to Stop.`;
+            }
+            hotkeyFailedMsgFound = true;
           }
-
-          aWrapperHotkey.reset(id);
-          // lines.splice(i--, 1);
-          lines[i] = `+>Setting Hotkeys...--> Press `;
-          if (keybindings[`${commandsPrefix}restartScript`])
-            lines[i] += `${keybindings[`${commandsPrefix}restartScript`]} to Restart`;
-
-          if (
-            keybindings[`${commandsPrefix}killScript`] ||
-            keybindings[`${commandsPrefix}killScriptOpened`]
-          ) {
-            if (keybindings[`${commandsPrefix}restartScript`]) lines[i] += ` or `;
-
-            lines[i] += `${keybindings[`${commandsPrefix}killScript`] ||
-              keybindings[`${commandsPrefix}killScriptOpened`]} to Stop.`;
-          }
-          hotkeyFailedMsgFound = true;
-          break;
+          if (++i >= lines.length) break;
         }
       }
       prevLine = !isFlush && prop === 'append' ? lines[lines.length - 1] : '';
@@ -669,7 +660,7 @@ function procRunner(cmdPath, args = [], bAiOutReuse = true) {
 
   runner.stdout.on('data', data => {
     try {
-      const output = (config.isCodePage ? decode(data, config.outputCodePage) : data).toString();
+      const output = (config.outputCodePage ? decode(data, config.outputCodePage) : data).toString();
       aiOut.append(output);
     } catch (er) {
       console.error(er);
@@ -678,7 +669,7 @@ function procRunner(cmdPath, args = [], bAiOutReuse = true) {
 
   runner.stderr.on('data', data => {
     try {
-      const output = (config.isCodePage ? decode(data, config.outputCodePage) : data).toString();
+      const output = (config.outputCodePage ? decode(data, config.outputCodePage) : data).toString();
       aiOut.append(output);
     } catch (er) {
       console.error(er);
@@ -880,18 +871,17 @@ function getDebugText() {
  */
 function getIndent() {
   const editor = window.activeTextEditor;
-  const doc = editor.document;
-  const line = doc.lineAt(editor.selection.active.line);
+  const { document, selection } = editor;
+  const activeLine = document.lineAt(selection.active.line);
 
-  if (line.isEmptyOrWhitespace) {
+  if (activeLine.isEmptyOrWhitespace) {
     return '';
   }
 
-  // Grab the whole line
-  const { text } = line;
-  // Get the indent of the current line
-  const findIndent = /(\s*).+/;
-  return findIndent.exec(text)[1];
+  const lineText = activeLine.text;
+  const indent = lineText.match(/^\s*/)[0];
+
+  return indent;
 }
 
 const debugMsgBox = () => {
@@ -1007,33 +997,30 @@ const launchKoda = () => {
   procRunner(config.kodaPath);
 };
 
-const changeConsoleParams = () => {
-  const currentParameters = config.consoleParams;
+/**
+ * Prompts the user to enter space-separated parameters to send to the command line when scripts are run.
+ * Wraps single parameters with one or more spaces with quotes.
+ * Updates the configuration with the new parameters and displays a message to the user.
+ */
+const changeConsoleParams = async () => {
+  const currentParams = config.consoleParams;
 
-  window
-    .showInputBox({
-      placeHolder: `param "param with spaces" 3`,
-      value: currentParameters,
-      prompt:
-        'Enter space-separated parameters to send to the command line when scripts are run. Wrap single parameters with one or more spaces with quotes.',
-    })
-    .then(input => {
-      let newParams = input;
-      if (input === undefined) {
-        // Preserve standing console parameters if input is cancelled
-        newParams = currentParameters;
-      }
+  const input = await window.showInputBox({
+    placeHolder: 'param "param with spaces" 3',
+    value: currentParams,
+    prompt:
+      'Enter space-separated parameters to send to the command line when scripts are run. Wrap single parameters with one or more spaces with quotes.',
+  });
 
-      config.update('consoleParams', newParams, false).then(() => {
-        const params = config.consoleParams;
+  const newParams = input !== undefined ? input : currentParams;
 
-        const message = params
-          ? `Current console parameter(s): ${params}`
-          : `Console parameter(s) have been cleared.`;
+  await config.update('consoleParams', newParams, false);
 
-        window.showInformationMessage(message);
-      });
-    });
+  const message = newParams
+    ? `Current console parameter(s): ${newParams}`
+    : 'Console parameter(s) have been cleared.';
+
+  window.showInformationMessage(message);
 };
 
 const killScriptOpened = () => {

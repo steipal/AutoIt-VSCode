@@ -66,14 +66,11 @@ const getIncludeText = filePath => {
 const getIncludePath = (fileOrPath, document) => {
   let includePath = '';
 
-  if (fileOrPath.charAt(1) === ':') {
+  if (fileOrPath.startsWith(':', 1)) {
     includePath = fileOrPath;
   } else {
-    let docDir = path.dirname(document.fileName);
-
-    docDir +=
-      (fileOrPath.charAt(0) === '\\' || fileOrPath.charAt(0) === '/' ? '' : '\\') + fileOrPath;
-    includePath = path.normalize(docDir);
+    const docDir = path.dirname(document.fileName);
+    includePath = path.join(docDir, fileOrPath);
   }
 
   includePath = includePath.charAt(0).toUpperCase() + includePath.slice(1);
@@ -124,14 +121,14 @@ const fillCompletions = (entries, kind, detail = '', requiredScript = '') => {
  * @returns Returns an empty object or with Hover objects
  */
 const signatureToHover = signatures => {
-  let hoverObjects = {};
-  const sigKeys = Object.keys(signatures);
-  sigKeys.forEach(item => {
-    hoverObjects = {
-      ...hoverObjects,
-      [item]: [signatures[item].documentation, `\`\`\`\r${signatures[item].label}\r\`\`\``],
-    };
-  });
+  const hoverObjects = {};
+
+  for (const item of Object.keys(signatures)) {
+    hoverObjects[item] = [
+      signatures[item].documentation,
+      `\`\`\`\r${signatures[item].label}\r\`\`\``,
+    ];
+  }
 
   return hoverObjects;
 };

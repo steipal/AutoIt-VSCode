@@ -1,7 +1,63 @@
 import { workspace, Uri, FileType, window } from 'vscode';
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
 import { showErrorMessage } from './ai_showMessage';
+
+const meta = require('../package.json');
+
+/**
+ * Fix the output style of the extension
+ * #209
+ * @link https://github.com/microsoft/vscode/issues/201603
+ */
+{
+  const cConfig = workspace.getConfiguration('editor');
+  const dataNew = {};
+  let save = false;
+
+  // convert default rules into an object with the scope as key
+  const defaultRules = meta.contributes.configurationDefaults[
+    'editor.tokenColorCustomizations'
+  ].textMateRules.reduce((obj, item) => {
+    obj[item.scope] = item;
+    return obj;
+  }, {});
+
+  let value = cConfig.get('tokenColorCustomizations');
+  if (typeof value !== 'object' || value === null) value = {};
+
+  const keys = Object.keys(value);
+  if (!Array.isArray(value.textMateRules)) keys.push('textMateRules');
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    // we are only interested in settings that have textMateRules
+    if (key !== 'textMateRules' && !value[key].textMateRules) continue;
+
+    const list = (value[key] && value[key].textMateRules) || value[key] || [];
+    const rules = Object.assign({}, defaultRules);
+    for (let j = 0; j < list.length; j++) {
+      // remove all existing rules, we don't want to replace user-changed rules
+      if (rules[list[j].scope]) delete rules[list[j].scope];
+    }
+    // add all remaining rules
+    for (const scope in rules) {
+      if (Object.prototype.hasOwnProperty.call(rules, scope)) {
+        list.push(rules[scope]);
+        save = true;
+      }
+    }
+
+    // store data in a new object, because original might be a Proxy
+    if (value[key] && value[key].textMateRules) dataNew[key] = { textMateRules: list };
+    else dataNew[key] = list;
+  }
+  if (save) {
+    // save global settings
+    cConfig.update('tokenColorCustomizations', dataNew, true);
+  }
+}
 
 const conf = {
   data: workspace.getConfiguration('autoit'),
@@ -260,10 +316,48 @@ function getPaths() {
   return undefined;
 }
 
+function updateIncludePaths() {
+  const { includePaths } = conf.data;
+  if (Array.isArray(includePaths)) {
+    for (let j = 0; j < includePaths.length; j++) {
+      let sPath = (typeof includePaths[j] === 'string' ? includePaths[j] : '').trim();
+      if (sPath === '') sPath = 'Include';
+      if (conf.defaultPaths.includePaths[j] === undefined)
+        conf.defaultPaths.includePaths[j] = Object.assign(
+          { fullPath: '' },
+          conf.defaultPaths.includePaths[0].check,
+        );
+      updateFullPath(sPath, conf.defaultPaths.includePaths[j], `includePaths[${j}]`);
+    }
+
+    // Update the registry key
+    const includePathsString = includePaths.join(';');
+    exec(
+      `reg add "HKCU\\Software\\AutoIt v3\\Autoit" /v Include /t REG_SZ /d "${includePathsString}" /f`,
+      (error, stdout, stderr) => {
+        if (error) {
+          window.showErrorMessage(`Error updating registry: ${error.message}`);
+          return;
+        }
+        if (stderr) {
+          window.showErrorMessage(`Registry stderr: ${stderr}`);
+          return;
+        }
+        window.showInformationMessage(`Registry updated: ${stdout}`);
+      },
+    );
+  }
+}
+
 workspace.onDidChangeConfiguration(({ affectsConfiguration }) => {
   if (bNoEvents || !affectsConfiguration('autoit')) return;
 
   conf.data = workspace.getConfiguration('autoit');
+
+  if (affectsConfiguration('autoit.includePaths')) {
+    updateIncludePaths();
+  }
+
   listeners.forEach(listener => {
     try {
       listener();
